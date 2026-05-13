@@ -7,6 +7,20 @@ import os
 import streamlit as st
 import config
 
+# ── 비밀번호 보호 ───────────────────────────────────────
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+
+if not st.session_state.authenticated:
+    st.title("🔒 AML 법령 Q&A")
+    password = st.text_input("비밀번호를 입력하세요", type="password")
+    if password == os.getenv("APP_PASSWORD", ""):
+        st.session_state.authenticated = True
+        st.rerun()
+    elif password:
+        st.error("비밀번호가 틀렸습니다")
+    st.stop()
+
 # ── 자동 인제스트 (벡터DB 없으면 자동 생성) ───────────
 if not os.path.exists(config.CHROMA_DB_DIR):
     with st.spinner("📚 첫 실행: 법령 문서 인제스트 중... (2-5분 소요)"):
