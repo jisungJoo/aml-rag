@@ -32,7 +32,11 @@ class RAGEngine:
         Returns:
             list of (Document, score) tuples
         """
-        k = top_k or config.TOP_K
+        # top_k가 지정되지 않으면 전체 문서 검색
+        if top_k is None and config.TOP_K == 0:
+            k = self.vectorstore._collection.count()
+        else:
+            k = top_k or config.TOP_K
 
         results = self.vectorstore.similarity_search_with_relevance_scores(
             query, k=k
