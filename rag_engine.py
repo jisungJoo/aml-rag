@@ -34,9 +34,9 @@ class RAGEngine:
         """
         # top_k가 지정되지 않으면 전체 문서 검색
         if top_k is None and config.TOP_K == 0:
-            k = self.vectorstore._collection.count()
+            k = max(self.vectorstore._collection.count(), 1)
         else:
-            k = top_k or config.TOP_K
+            k = top_k or max(config.TOP_K, 1)
 
         results = self.vectorstore.similarity_search_with_relevance_scores(
             query, k=k
