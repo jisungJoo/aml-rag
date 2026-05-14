@@ -1,12 +1,13 @@
 """
 문서 인제스트 스크립트
-- data/ 폴더의 PDF/텍스트 파일을 읽어서
+- PDF/텍스트 파일을 읽어서
 - 청킹 → 임베딩 → ChromaDB에 저장
 """
 
 import os
 import sys
 import glob
+from collections import Counter
 from tqdm import tqdm
 
 import config
@@ -42,7 +43,7 @@ def get_embedding_function():
 def load_pdf_with_pdfplumber(pdf_path):
     """pdfplumber로 PDF 전체 페이지를 읽어 Document 객체로 반환"""
     import pdfplumber
-    from langchain.schema import Document
+    from langchain_core.documents import Document
 
     documents = []
     filename = os.path.basename(pdf_path)
@@ -67,7 +68,7 @@ def load_pdf_with_pdfplumber(pdf_path):
 
 
 def load_documents():
-    """data/ 폴더에서 문서 로드"""
+    """문서 로드"""
     from langchain_community.document_loaders import TextLoader
 
     documents = []
@@ -79,46 +80,68 @@ def load_documents():
         print("   이 폴더에 AML 법령 PDF/텍스트 파일을 넣어주세요.")
         sys.exit(1)
 
-    # PDF 파일 로드 (pdfplumber 사용 - 전체 페이지 정확히 읽기)
+    # PDF 파일 수집 (하위 폴더 포함 + 루트)
     pdf_files = glob.glob(os.path.join(data_dir, "**/*.pdf"), recursive=True)
-    # 루트에 있는 PDF도 포함
     root_pdfs = glob.glob(os.path.join(data_dir, "*.pdf"))
     all_pdfs = list(set(pdf_files + root_pdfs))
 
-    for pdf_path in tqdm(all_pdfs, desc="📄 PDF 로딩"):
+    print(f"\n🔍 발견된 PDF 파일: {len(all_pdfs)}개")
+
+    for pdf_path in all_pdfs:
+        fname = os.path.basename(pdf_path)
+        print(f"\n  📄 처리 중: {fname}")
+
+        # 1차 시도: pdfplumber
         try:
             docs = load_pdf_with_pdfplumber(pdf_path)
             documents.extend(docs)
-            print(f"  ✅ {os.path.basename(pdf_path)}: {len(docs)}페이지 로드")
+            print(f"  ✅ {fname}: {len(docs)}페이지 로드 완료 (pdfplumber)")
+            continue
         except Exception as e:
-            print(f"  ⚠️ pdfplumber 실패, PyPDFLoader로 재시도: {e}")
-            try:
-                from langchain_community.document_loaders import PyPDFLoader
-                loader = PyPDFLoader(pdf_path)
-                docs = loader.load()
-                for doc in docs:
-                    doc.metadata["source_file"] = os.path.basename(pdf_path)
-                documents.extend(docs)
-                print(f"  🔄 PyPDFLoader로 성공: {len(docs)}페이지")
-            except Exception as e2:
-                print(f"  ❌ 완전 실패: {e2}")
+            print(f"  ⚠️ pdfplumber 실패: {e}")
 
-    # 텍스트 파일 로드
+        # 2차 시도: PyPDFLoader
+        try:
+            from langchain_community.document_loaders import PyPDFLoader
+            loader = PyPDFLoader(pdf_path)
+            docs = loader.load()
+            for doc in docs:
+                doc.metadata["source_file"] = fname
+            documents.extend(docs)
+            print(f"  ✅ {fname}: {len(docs)}페이지 로드 완료 (PyPDFLoader)")
+        except Exception as e2:
+            print(f"  ❌ {fname}: 로드 완전 실패 - {e2}")
+
+    # 텍스트 파일 수집
     txt_files = glob.glob(os.path.join(data_dir, "**/*.txt"), recursive=True)
     root_txts = glob.glob(os.path.join(data_dir, "*.txt"))
     all_txts = list(set(txt_files + root_txts))
 
-    for txt_path in tqdm(all_txts, desc="📝 텍스트 로딩"):
+    if all_txts:
+        print(f"\n🔍 발견된 TXT 파일: {len(all_txts)}개")
+
+    for txt_path in all_txts:
+        fname = os.path.basename(txt_path)
         try:
             loader = TextLoader(txt_path, encoding="utf-8")
             docs = loader.load()
             for doc in docs:
-                doc.metadata["source_file"] = os.path.basename(txt_path)
+                doc.metadata["source_file"] = fname
             documents.extend(docs)
+            print(f"  ✅ {fname}: {len(docs)}개 문서 로드 완료")
         except Exception as e:
-            print(f"  ⚠️ {txt_path} 로딩 실패: {e}")
+            print(f"  ❌ {fname}: 로딩 실패 - {e}")
 
-    print(f"\n✅ 총 {len(documents)}개 문서 페이지 로드 완료")
+    # ── 파일별 요약 출력 ──────────────────────────────────
+    print("\n" + "=" * 60)
+    print("📊 파일별 로드 현황:")
+    print("=" * 60)
+    file_counts = Counter(doc.metadata.get("source_file", "unknown") for doc in documents)
+    for fname, count in file_counts.most_common():
+        print(f"   📄 {fname}: {count}페이지")
+    print(f"\n   ✅ 전체: {len(documents)}페이지 로드 완료")
+    print("=" * 60)
+
     return documents
 
 
@@ -152,13 +175,15 @@ def create_vector_store(chunks):
 
     print("🔄 임베딩 생성 & 벡터DB 저장 중...")
 
-    # 배치 처리 (대량 문서 처리 시 API rate limit 관리)
+    # 배치 처리 (API rate limit 관리)
     batch_size = 50
     vectorstore = None
 
     for i in range(0, len(chunks), batch_size):
         batch = chunks[i : i + batch_size]
-        print(f"  📦 배치 {i // batch_size + 1}/{(len(chunks) - 1) // batch_size + 1} 처리 중... ({len(batch)}개 청크)")
+        batch_num = i // batch_size + 1
+        total_batches = (len(chunks) - 1) // batch_size + 1
+        print(f"  📦 배치 {batch_num}/{total_batches} 처리 중... ({len(batch)}개 청크)")
 
         if vectorstore is None:
             vectorstore = Chroma.from_documents(
@@ -170,7 +195,7 @@ def create_vector_store(chunks):
         else:
             vectorstore.add_documents(batch)
 
-    print(f"✅ 벡터DB 저장 완료: {config.CHROMA_DB_DIR}")
+    print(f"\n✅ 벡터DB 저장 완료: {config.CHROMA_DB_DIR}")
     print(f"   총 {len(chunks)}개 청크 저장됨")
     return vectorstore
 
@@ -193,7 +218,7 @@ def main():
     create_vector_store(chunks)
 
     print("\n" + "=" * 60)
-    print("🎉 인제스트 완료! 이제 'streamlit run app.py'로 실행하세요.")
+    print("🎉 인제스트 완료!")
     print("=" * 60)
 
 
