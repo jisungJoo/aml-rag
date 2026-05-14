@@ -12,7 +12,7 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 VOYAGE_API_KEY = os.getenv("VOYAGE_API_KEY", "")
 
 # ── 경로 ────────────────────────────────────────────────
-DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "")
 CHROMA_DB_DIR = os.path.join(os.path.dirname(__file__), "chroma_db")
 
 # ── 임베딩 설정 ─────────────────────────────────────────
