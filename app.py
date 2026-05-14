@@ -14,7 +14,7 @@ if "authenticated" not in st.session_state:
 if not st.session_state.authenticated:
     st.title("🔒 AML 법령 Q&A")
     password = st.text_input("비밀번호를 입력하세요", type="password")
-    if password == os.getenv("APP_PASSWORD", ""):
+    if password == st.secrets.get("APP_PASSWORD", ""):
         st.session_state.authenticated = True
         st.rerun()
     elif password:
