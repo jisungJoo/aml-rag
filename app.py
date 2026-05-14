@@ -13,14 +13,14 @@ if "authenticated" not in st.session_state:
 
 if not st.session_state.authenticated:
     st.title("🔒 AML 법령 Q&A")
-    password = st.text_input("비밀번호를 입력하세요", type="password")
-    submit = st.button("로그인")
-    if submit and password:
-        if password.strip() == "pwccon2026":
-            st.session_state.authenticated = True
-            st.rerun()
-        else:
-            st.error("비밀번호가 틀렸습니다")
+    with st.form("login_form"):
+        password = st.text_input("비밀번호를 입력하세요", type="password")
+        submitted = st.form_submit_button("로그인")
+    if submitted and password.strip() == "pwccon2026":
+        st.session_state.authenticated = True
+        st.rerun()
+    elif submitted:
+        st.error("비밀번호가 틀렸습니다")
     st.stop()
 
 # ── 자동 인제스트 (벡터DB 없으면 자동 생성) ───────────
