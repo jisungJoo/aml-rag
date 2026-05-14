@@ -8,12 +8,15 @@ import tempfile
 import streamlit as st
 import config
 
-# ── 자동 인제스트 (벡터DB 없으면 자동 생성) ───────────────
+# ── 빈 벡터DB 생성 (없으면) ───────────────────────────────
 if not os.path.exists(config.CHROMA_DB_DIR):
-    st.info("📚 첫 실행: 법령 문서 인제스트 중... (2-5분 소요)")
-    from ingest import main as run_ingest
-    run_ingest()
-
+    from langchain_community.vectorstores import Chroma
+    from ingest import get_embedding_function
+    Chroma(
+        persist_directory=config.CHROMA_DB_DIR,
+        embedding_function=get_embedding_function(),
+        collection_name="aml_laws",
+    )
 # ── 페이지 설정 ─────────────────────────────────────────
 st.set_page_config(
     page_title=config.APP_TITLE,
